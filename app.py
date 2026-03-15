@@ -1182,19 +1182,19 @@ if analiz_btn:
         "last_is_scan": is_scanner,
     })
     if is_scanner:
-        st.session_state["sc_lower"]  = sc_lower
-        st.session_state["sc_upper"]  = sc_upper
-        st.session_state["sc_period"] = sc_period
-        st.session_state["sc_grup"]   = sc_grup
-        st.session_state["sc_ozel"]   = ozel_liste
+        st.session_state["_sc_lower"]  = sc_lower
+        st.session_state["_sc_upper"]  = sc_upper
+        st.session_state["_sc_period"] = sc_period
+        st.session_state["_sc_grup"]   = sc_grup
+        st.session_state["_sc_ozel"]   = ozel_liste
 
 # ── TARAYICI MODU ──
 if st.session_state.get("last_is_scan") and analiz_btn:
-    _lower  = st.session_state.get("sc_lower",  30)
-    _upper  = st.session_state.get("sc_upper",  40)
-    _period = st.session_state.get("sc_period", 10)
-    _grup   = st.session_state.get("sc_grup",   list(TARAMA_GRUPLARI.keys())[0])
-    _ozel   = st.session_state.get("sc_ozel",   "")
+    _lower  = st.session_state.get("_sc_lower",  30)
+    _upper  = st.session_state.get("_sc_upper",  40)
+    _period = st.session_state.get("_sc_period", 10)
+    _grup   = st.session_state.get("_sc_grup",   list(TARAMA_GRUPLARI.keys())[0])
+    _ozel   = st.session_state.get("_sc_ozel",   "")
 
     if _grup == "✏️ Özel Liste" and _ozel.strip():
         hisseler = [h.strip().upper() for h in _ozel.split(",") if h.strip()]
