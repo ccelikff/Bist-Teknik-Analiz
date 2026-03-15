@@ -1,10 +1,8 @@
 """
 BİST & EMTİA TEKNİK ANALİZ
-- Çoklu Zaman Dilimi Karşılaştırma
-- Divergence Tespiti
-- Emtia (Altın, Gümüş, Platin, Paladyum)
+- RSİ Otomatik Tarayıcı + Telegram
 - BİST Endeksleri
-- Telegram Sinyal Botu
+- Emtia
 """
 
 import warnings
@@ -16,8 +14,63 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import requests
 from datetime import datetime
+import time
 
 warnings.filterwarnings("ignore")
+
+# ─────────────────────────────────────────────
+# BİST100 HİSSE LİSTESİ
+# ─────────────────────────────────────────────
+BIST100_HISSELER = [
+    "ACSEL","ADEL","ADNAC","AFYON","AGESA","AGHOL","AGYO","AHGAZ","AKBNK","AKCNS",
+    "AKENR","AKFGY","AKFYE","AKGRT","AKMGY","AKSA","AKSEN","AKSGY","AKSUE","AKYHO",
+    "ALARK","ALBRK","ALCAR","ALFAS","ALGYO","ALKIM","ALKLC","ALMAD","ALTINS","ALVES",
+    "ANELE","ANEN","ANHYT","ANSGR","ARASE","ARCLK","ARDYZ","ARENA","ARSAN","ASELS",
+    "ASGYO","ASTOR","ATAGY","ATAKP","ATATP","ATEKS","AVGYO","AVHOL","AVOD","AVPGY",
+    "AYCES","AYEN","AYGAZ","AZTEK","BAGFS","BAKAB","BALAT","BANAS","BANVT","BASGZ",
+    "BAYRK","BERA","BEYAZ","BFREN","BGFIN","BIMAS","BIOEN","BJKAS","BLCYT","BNTAS",
+    "BOBET","BORLS","BORSK","BRISA","BRKSN","BRKVY","BRSAN","BRYAT","BSOKE","BTCIM",
+    "BUCIM","BURCE","BURVA","BVSAN","CANTE","CARFA","CASA","CCOLA","CELHA","CEMAS",
+    "CEMTS","CEOEM","CIMSA","CLEBI","CMBTN","CMENT","CONSE","COSMO","CRDFA","CRFSA",
+    "CUSAN","CVKMD","CWENE","DAGI","DAPGM","DARDL","DENGE","DEPFA","DESA","DESPC",
+    "DEVA","DGATE","DGGYO","DITAS","DMSAS","DNISI","DOAS","DOBUR","DOCO","DOGUB",
+    "DOHOL","DOKTA","DURDO","DYOBY","DZGYO","ECILC","ECZYT","EDIP","EFORC","EGEEN",
+    "EGGUB","EGPRO","EGSER","EKGYO","EKIZ","EKSUN","ELITE","EMKEL","EMNIS","ENERY",
+    "ENKAI","ENSRI","ENPRO","EPLAS","ERBOS","ERCB","ERDMR","EREGL","ERSU","ESCAR",
+    "ESCOM","ESEN","ETILR","ETYAT","EUHOL","EUPWR","EUREN","EUYO","EYGYO","FADE",
+    "FENER","FLAP","FMIZP","FONET","FORMT","FORTE","FROTO","FZLGY","GARAN","GARFA",
+    "GEDIK","GEDZA","GENIL","GENTS","GEREL","GESAN","GLBMD","GLCVY","GLYHO","GMTAS",
+    "GOKNR","GOLDS","GOLTS","GOODY","GOZDE","GRSEL","GRTRK","GSDDE","GSDHO","GSRAY",
+    "GUBRF","GWIND","GZNMI","HALKB","HATEK","HDFGS","HEDEF","HEKTS","HKTM","HLGYO",
+    "HOROZ","HRKET","HTTBT","HUBVC","HUNER","HURGZ","ICBCT","ICUGS","IDEAS","IEYHO",
+    "IHAAS","IHEVA","IHGZT","IHLAS","IHLGM","IHYAY","IMASM","INDES","INFO","INGRM",
+    "INTEM","INVEO","IPEKE","IPEKY","IPMAT","ISATR","ISBIR","ISCTR","ISFIN","ISGSY",
+    "ISGYO","ISKPL","ISLTR","ISMEN","ISYAT","ITTFK","IZENR","IZFAS","IZINV","IZMDC",
+    "JANTS","KAPLM","KAREL","KARSN","KARTN","KATMR","KCHOL","KCVGY","KENT","KERVN",
+    "KERVT","KFEIN","KGYO","KILER","KIMMR","KLGYO","KLMSN","KMPUR","KNFRT","KOIPM",
+    "KONTR","KONYA","KOPOL","KORDS","KRDMA","KRDMB","KRDMD","KRONT","KRPLS","KRSTN",
+    "KRTEK","KRVGD","KSTUR","KTLEV","KUTPO","KUVVA","KZBGY","LIDER","LIDFA","LILAK",
+    "LKMNH","LOGO","LRSHO","LUKSK","MAGEN","MAKIM","MAKTK","MANAS","MARBL","MAVI",
+    "MEDTR","MEGAP","MEKAG","MERIM","MERKO","METRO","METUR","MIATK","MIPAZ","MMCAS",
+    "MNDRS","MNDTR","MOBTL","MPARK","MRGYO","MRSHL","MSGYO","MTRKS","MTRYO","MUTLU",
+    "NATEN","NETAS","NTGAZ","NTHOL","NUGYO","NUHCM","OBAMS","OBASE","ODAS","ONCSM",
+    "ONRYT","ORCAY","ORGE","ORMA","OSMEN","OSTIM","OTKAR","OTTO","OYAKC","OYAYO",
+    "OYLUM","OZGYO","OZKGY","PAGYO","PAMEL","PAPIL","PARSN","PASEU","PATEK","PEKGY",
+    "PENTA","PETKM","PETUN","PGSUS","PINSU","PKART","PKENT","PLTUR","PNSUT","POLHO",
+    "POLTK","PRDGS","PRKAB","PRKME","PRZMA","PSDTC","PSGYO","PSGYS","QNBFB","QNBFL",
+    "QLTUR","RAYSG","RGYAS","RNPOL","RODRG","ROYAL","RTALB","RUBNS","RYGYO","RYSAS",
+    "SAFKN","SAHOL","SAMAT","SANEL","SANFM","SANKO","SARKY","SASA","SAYAS","SDTTR",
+    "SEGMN","SEGYO","SEKFK","SEKUR","SELEC","SELGD","SELVA","SEYKM","SILVR","SISE",
+    "SKBNK","SMRTG","SNGYO","SNKRN","SNPAM","SODSN","SOKM","SONME","SRVGY","SUMAS",
+    "SUNEKS","SURGY","SUWEN","SUNTK","TABGD","TARKM","TATEN","TATGD","TAVHL","TBORG",
+    "TCELL","TDGYO","TEKTU","TERA","TETMT","THYAO","TIRE","TKFEN","TKNSA","TLMAN",
+    "TMPOL","TMSN","TOASO","TRCAS","TRGYO","TRILC","TSGYO","TSKB","TSPOR","TTKOM",
+    "TTRAK","TUCLK","TUGVA","TUKAS","TUPRS","TUREX","TURGG","TURSG","TYHOL","ULKER",
+    "ULUFA","ULUSE","ULUUN","UNLU","USAK","USDTR","VAKBN","VAKFN","VAKKO","VANGD",
+    "VARLI","VBTYZ","VERUS","VESBE","VKFYO","VKGYO","VKING","YAPRK","YATAS","YAZIC",
+    "YBTAS","YEOTK","YESIL","YGYO","YIGIT","YKBNK","YKSLN","YONGA","YUNSA","ZEDUR",
+    "ZOREN","ZORLU","ZRGYO",
+]
 
 # ─────────────────────────────────────────────
 # EMTİA TANIMLARI
@@ -104,6 +157,90 @@ def build_telegram_message(disp_name, para, last, chg, chg_pct,
     msg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
     msg += f"🎯 <b>GENEL EĞİLİM:</b> {genel} ({al_g} alım / {sat_g} satım)\n"
     msg += f"\n⚠️ <i>Yatırım tavsiyesi değildir.</i>"
+    return msg
+
+# ─────────────────────────────────────────────
+# RSİ TARAYICI
+# ─────────────────────────────────────────────
+def rsi_scanner_check(ticker_code, rsi_period=10, lower=30, upper=40):
+    """
+    Tek hisse için RSİ koşulunu kontrol eder.
+    Koşul: Son mumda RSİ lower altındayken upper'ı kırdı mı?
+    Döner: dict (sinyal varsa) veya None
+    """
+    try:
+        symbol = ticker_code + ".IS"
+        df = yf.download(symbol, period="60d", interval="1d",
+                         auto_adjust=True, progress=False)
+        if df.empty or len(df) < rsi_period + 5:
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        close = df["Close"].squeeze()
+        rsi   = calc_rsi(close, rsi_period)
+
+        # Son 3 mumu kontrol et
+        for i in range(-3, 0):
+            prev_rsi = float(rsi.iloc[i-1])
+            curr_rsi = float(rsi.iloc[i])
+            curr_price = float(close.iloc[i])
+
+            if prev_rsi < lower and curr_rsi >= upper:
+                return {
+                    "ticker":  ticker_code,
+                    "fiyat":   curr_price,
+                    "rsi_onceki": round(prev_rsi, 1),
+                    "rsi_simdi":  round(curr_rsi, 1),
+                    "tarih":   df.index[i].strftime("%d.%m.%Y"),
+                    "degisim": round((curr_price - float(close.iloc[-2])) /
+                                     float(close.iloc[-2]) * 100, 2),
+                }
+        return None
+    except Exception:
+        return None
+
+def run_rsi_scanner(hisse_listesi, rsi_period=10, lower=30, upper=40,
+                    progress_bar=None, status_text=None):
+    """Tüm listeyi tarar, eşleşen hisseleri döndürür."""
+    bulunanlar = []
+    toplam = len(hisse_listesi)
+
+    for i, ticker in enumerate(hisse_listesi):
+        if progress_bar:
+            progress_bar.progress((i + 1) / toplam,
+                text=f"Tarıyor: {ticker} ({i+1}/{toplam})")
+        if status_text:
+            status_text.text(f"⏳ {ticker} kontrol ediliyor...")
+
+        sonuc = rsi_scanner_check(ticker, rsi_period, lower, upper)
+        if sonuc:
+            bulunanlar.append(sonuc)
+        time.sleep(0.05)  # Rate limit önlemi
+
+    return bulunanlar
+
+def build_scanner_telegram_msg(bulunanlar, rsi_period, lower, upper):
+    """Tarama sonucu Telegram mesajı."""
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    msg = f"""🔍 <b>BİST RSİ TARAMA SONUÇLARI</b>
+🕐 {now}
+
+📌 Koşul: RSİ({rsi_period}) → {lower} altından {upper} üzerine çıktı
+━━━━━━━━━━━━━━━━━━━━
+"""
+    if not bulunanlar:
+        msg += "❌ Bu koşulu sağlayan hisse bulunamadı.\n"
+    else:
+        msg += f"✅ <b>{len(bulunanlar)} hisse bulundu:</b>\n\n"
+        for b in bulunanlar:
+            sign = "▲" if b["degisim"] >= 0 else "▼"
+            msg += (f"📈 <b>{b['ticker']}</b> — ₺{b['fiyat']:.2f} "
+                    f"{sign}{abs(b['degisim']):.2f}%\n"
+                    f"   RSİ: {b['rsi_onceki']} → <b>{b['rsi_simdi']}</b> "
+                    f"| Tarih: {b['tarih']}\n\n")
+
+    msg += "⚠️ <i>Yatırım tavsiyesi değildir.</i>"
     return msg
 
 # ─────────────────────────────────────────────
@@ -630,7 +767,10 @@ def fetch_bist(ticker, days, interval):
                      auto_adjust=True, progress=False)
     if df.empty: return None
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df = df[["Open","High","Low","Close","Volume"]].dropna()
+    cols = [c for c in ["Open","High","Low","Close","Volume"] if c in df.columns]
+    df = df[cols].dropna()
+    if "Volume" not in df.columns: df["Volume"] = 0
+    if len(df) < 2: return None
     df.index = pd.to_datetime(df.index)
     return df.astype(float)
 
@@ -643,6 +783,7 @@ def fetch_commodity(ticker, days, interval):
     cols = [c for c in ["Open","High","Low","Close","Volume"] if c in df.columns]
     df = df[cols].dropna()
     if "Volume" not in df.columns: df["Volume"] = 0
+    if len(df) < 2: return None
     df.index = pd.to_datetime(df.index)
     return df.astype(float)
 
@@ -910,12 +1051,14 @@ with st.sidebar:
     mod = st.radio("Piyasa Seçin", [
         "🇹🇷 BİST Hisseleri",
         "📊 BİST Endeksleri",
-        "🏅 Emtia"
+        "🏅 Emtia",
+        "🔍 RSİ Tarayıcı",
     ], horizontal=False)
     st.markdown("---")
 
     is_commodity = False
     is_index     = False
+    is_scanner   = False
     commodity_key = None
     index_key     = None
 
@@ -928,10 +1071,30 @@ with st.sidebar:
         ticker_input = ENDEKSLER[index_key]["ticker"]
         is_index     = True
 
-    else:
+    elif mod == "🏅 Emtia":
         commodity_key = st.selectbox("Emtia Seçin", list(EMTIALAR.keys()))
         ticker_input  = EMTIALAR[commodity_key]["ticker"]
         is_commodity  = True
+
+    else:  # RSİ Tarayıcı
+        is_scanner   = True
+        ticker_input = ""
+        st.markdown("**📡 Tarama Ayarları**")
+        sc_lower  = st.number_input("RSİ Alt Eşik (önceki)", 5,  50, 30)
+        sc_upper  = st.number_input("RSİ Üst Eşik (şimdiki)", 10, 70, 40)
+        sc_period = st.number_input("RSİ Periyot", 2, 50, 10)
+        sc_liste  = st.multiselect(
+            "Hisse Listesi",
+            ["Tüm BİST (yavaş ~10dk)", "Özel Liste"],
+            default=["Tüm BİST (yavaş ~10dk)"]
+        )
+        if "Özel Liste" in sc_liste:
+            ozel_liste = st.text_area(
+                "Hisseler (virgülle ayırın)",
+                placeholder="THYAO, SISE, GARAN, EREGL..."
+            )
+        else:
+            ozel_liste = ""
 
     st.markdown("**Veri Aralığı**")
     gunluk_gun   = st.slider("Günlük (gün)",   90,  730,  365)
@@ -948,7 +1111,10 @@ with st.sidebar:
     show_mtf     = st.toggle("🕐 Çoklu Zaman Dilimi",    value=True)
 
     st.markdown("---")
-    analiz_btn = st.button("🚀 ANALİZ ET")
+    if is_scanner:
+        analiz_btn = st.button("🔍 TARAMAYI BAŞLAT")
+    else:
+        analiz_btn = st.button("🚀 ANALİZ ET")
 
     # ── TELEGRAM AYARLARI ──
     st.markdown("---")
@@ -960,6 +1126,8 @@ with st.sidebar:
         tg_token   = st.text_input("Bot Token", placeholder="123456:ABC-DEF...", type="password")
         tg_chat_id = st.text_input("Chat ID",   placeholder="-100123456 veya @kanal")
         tg_btn     = st.button("📤 Telegram'a Gönder", disabled=not(tg_token and tg_chat_id))
+        if tg_token:  st.session_state["_tg_token"]   = tg_token
+        if tg_chat_id: st.session_state["_tg_chat_id"] = tg_chat_id
         st.markdown("""<div style='font-size:10px;color:#484F58;margin-top:6px;'>
         💡 Token almak için: @BotFather<br>
         💡 Chat ID için: @userinfobot
@@ -981,7 +1149,91 @@ if analiz_btn:
         "last_div": show_div, "last_mtf": show_mtf,
         "last_is_comm": is_commodity, "last_comm_key": commodity_key,
         "last_is_idx":  is_index,     "last_idx_key":  index_key,
+        "last_is_scan": is_scanner,
     })
+    if is_scanner:
+        st.session_state["sc_lower"]  = sc_lower
+        st.session_state["sc_upper"]  = sc_upper
+        st.session_state["sc_period"] = sc_period
+        st.session_state["sc_liste"]  = sc_liste
+        st.session_state["sc_ozel"]   = ozel_liste
+
+# ── TARAYICI MODU ──
+if st.session_state.get("last_is_scan") and analiz_btn:
+    _lower  = st.session_state.get("sc_lower",  30)
+    _upper  = st.session_state.get("sc_upper",  40)
+    _period = st.session_state.get("sc_period", 10)
+    _liste  = st.session_state.get("sc_liste",  ["Tüm BİST (yavaş ~10dk)"])
+    _ozel   = st.session_state.get("sc_ozel",   "")
+
+    if "Özel Liste" in _liste and _ozel.strip():
+        hisseler = [h.strip().upper() for h in _ozel.split(",") if h.strip()]
+    else:
+        hisseler = BIST100_HISSELER
+
+    st.markdown(f"""
+    <div style='background:#161B22;border:1px solid #2E75B6;border-radius:10px;
+                padding:16px 24px;margin-bottom:16px;'>
+      <div style='font-size:20px;font-weight:900;color:#58A6FF;'>🔍 RSİ TARAYICI</div>
+      <div style='font-size:12px;color:#8B949E;margin-top:4px;'>
+        Koşul: RSİ({_period}) → <b style='color:#EF5350'>{_lower} altından</b>
+        <b style='color:#26A69A'>{_upper} üzerine</b> çıkan hisseler
+        &nbsp;|&nbsp; {len(hisseler)} hisse taranacak
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    prog  = st.progress(0, text="Tarama başlıyor...")
+    stxt  = st.empty()
+
+    bulunanlar = run_rsi_scanner(
+        hisseler, _period, _lower, _upper,
+        progress_bar=prog, status_text=stxt
+    )
+    prog.empty(); stxt.empty()
+
+    # Sonuç tablosu
+    if bulunanlar:
+        st.success(f"✅ **{len(bulunanlar)} hisse** koşulu sağladı!")
+        col_w = [0.8, 0.9, 0.7, 0.7, 0.7, 1.0]
+        headers = ["HİSSE", "FİYAT (₺)", "DEĞİŞİM %", f"RSİ ÖNCEKİ", f"RSİ ŞİMDİ", "TARİH"]
+        hcols = st.columns(col_w)
+        for hc, h in zip(hcols, headers):
+            hc.markdown(
+                f"<div style='background:#1F3864;color:#58A6FF;font-weight:700;"
+                f"font-size:12px;padding:8px 6px;text-align:center;"
+                f"border-bottom:2px solid #2E75B6;'>{h}</div>",
+                unsafe_allow_html=True)
+
+        for i, b in enumerate(bulunanlar):
+            bg  = "#161B22" if i%2==0 else "#0D1117"
+            dc  = "#26A69A" if b["degisim"]>=0 else "#EF5350"
+            ds  = "▲" if b["degisim"]>=0 else "▼"
+            cell = f"padding:9px 6px;text-align:center;background:{bg};border-bottom:1px solid #21262D;font-size:13px;"
+            rcols = st.columns(col_w)
+            rcols[0].markdown(f"<div style='{cell}font-weight:800;color:#58A6FF;'>{b['ticker']}</div>", unsafe_allow_html=True)
+            rcols[1].markdown(f"<div style='{cell}color:#E0E0E0;'>₺{b['fiyat']:.2f}</div>", unsafe_allow_html=True)
+            rcols[2].markdown(f"<div style='{cell}color:{dc};font-weight:700;'>{ds}{abs(b['degisim']):.2f}%</div>", unsafe_allow_html=True)
+            rcols[3].markdown(f"<div style='{cell}color:#EF5350;'>{b['rsi_onceki']}</div>", unsafe_allow_html=True)
+            rcols[4].markdown(f"<div style='{cell}color:#26A69A;font-weight:700;'>{b['rsi_simdi']}</div>", unsafe_allow_html=True)
+            rcols[5].markdown(f"<div style='{cell}color:#8B949E;'>{b['tarih']}</div>", unsafe_allow_html=True)
+
+        # Telegram gönder
+        tg_tok = st.session_state.get("_tg_token",  tg_token  if tg_token  else "")
+        tg_cid = st.session_state.get("_tg_chat_id",tg_chat_id if tg_chat_id else "")
+        if tg_tok and tg_cid:
+            msg = build_scanner_telegram_msg(bulunanlar, _period, _lower, _upper)
+            ok, _ = telegram_send(tg_tok, tg_cid, msg)
+            if ok:
+                st.success("📱 Sonuçlar Telegram'a gönderildi!")
+            else:
+                st.warning("⚠️ Telegram gönderilemedi — Bot Token / Chat ID kontrol edin.")
+        else:
+            st.info("💡 Sol paneldeki **Telegram Sinyal Botu** bölümüne Token ve Chat ID girerek sonuçları otomatik alabilirsiniz.")
+    else:
+        st.info(f"Bu taramada RSİ({_period}) koşulunu ({_lower}→{_upper}) sağlayan hisse bulunamadı.")
+
+    st.stop()  # Tarayıcı modunda grafik gösterme
 
 t    = st.session_state.get("last_ticker", "")
 gd   = st.session_state.get("last_gd",  gunluk_gun)
@@ -1031,6 +1283,10 @@ with st.spinner(f"📥 {t} verisi çekiliyor..."):
 
 if df_d is None or df_w is None:
     st.error(f"❌ **{t}** için veri bulunamadı.")
+    st.stop()
+
+if len(df_d) < 2:
+    st.error(f"❌ **{t}** için yeterli veri yok (en az 2 mum gerekli). Farklı bir hisse veya daha uzun veri aralığı deneyin.")
     st.stop()
 
 # ── Fiyat başlık kartı ──
