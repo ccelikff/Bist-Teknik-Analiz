@@ -1080,9 +1080,9 @@ with st.sidebar:
         is_scanner   = True
         ticker_input = ""
         st.markdown("**📡 Tarama Ayarları**")
-        sc_lower  = st.number_input("RSİ Alt Eşik (önceki)", 5,  50, 30)
-        sc_upper  = st.number_input("RSİ Üst Eşik (şimdiki)", 10, 70, 40)
-        sc_period = st.number_input("RSİ Periyot", 2, 50, 10)
+        sc_lower  = st.number_input("RSİ Alt Eşik (önceki)",  5,  50, 30, key="sc_low")
+        sc_upper  = st.number_input("RSİ Üst Eşik (şimdiki)", 10, 70, 40, key="sc_up")
+        sc_period = st.number_input("RSİ Periyot",             2,  50, 10, key="sc_per")
         sc_liste  = st.multiselect(
             "Hisse Listesi",
             ["Tüm BİST (yavaş ~10dk)", "Özel Liste"],
@@ -1097,18 +1097,18 @@ with st.sidebar:
             ozel_liste = ""
 
     st.markdown("**Veri Aralığı**")
-    gunluk_gun   = st.slider("Günlük (gün)",   90,  730,  365)
-    haftalik_gun = st.slider("Haftalık (gün)", 180, 1460, 730)
+    gunluk_gun   = st.slider("Günlük (gün)",   90,  730,  365, key="sl_gd")
+    haftalik_gun = st.slider("Haftalık (gün)", 180, 1460, 730, key="sl_hd")
 
     st.markdown("**İndikatör Ayarları**")
-    rsi_period = st.number_input("RSİ Periyot",      2, 50, 10)
-    mom_period = st.number_input("Momentum Periyot", 2, 50, 10)
+    rsi_period = st.number_input("RSİ Periyot",      2, 50, 10, key="ni_rsi")
+    mom_period = st.number_input("Momentum Periyot", 2, 50, 10, key="ni_mom")
 
     st.markdown("**Göster / Gizle**")
-    show_signals = st.toggle("🔔 Alım/Satım Sinyalleri", value=True)
-    show_sr      = st.toggle("📐 Destek / Direnç",       value=True)
-    show_div     = st.toggle("🔀 Divergence Tespiti",     value=True)
-    show_mtf     = st.toggle("🕐 Çoklu Zaman Dilimi",    value=True)
+    show_signals = st.toggle("🔔 Alım/Satım Sinyalleri", value=True, key="tog_sig")
+    show_sr      = st.toggle("📐 Destek / Direnç",       value=True, key="tog_sr")
+    show_div     = st.toggle("🔀 Divergence Tespiti",     value=True, key="tog_div")
+    show_mtf     = st.toggle("🕐 Çoklu Zaman Dilimi",    value=True, key="tog_mtf")
 
     st.markdown("---")
     if is_scanner:
