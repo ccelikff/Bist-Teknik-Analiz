@@ -264,66 +264,68 @@ def build_indicator_table(df, rsi_period, mom_period):
 
     return rows
 
-def render_indicator_table(rows, label):
-    """HTML tablo render et."""
-    def sinyal_clr(s):
-        if "Alış" in s or "Alımda" in s:  return "#26A69A"
-        if "Satış" in s or "Satışta" in s or "Aşırı Alım" in s: return "#EF5350"
-        if "Aşırı Satım" in s: return "#26A69A"
-        return "#8B949E"
-
-    def uyus_clr(u):
-        if u == "(+)": return "#26A69A"
-        if u == "(-)": return "#EF5350"
-        return "#484F58"
-
-    def uyus_bg(u):
-        if u == "(+)": return "rgba(38,166,154,0.15)"
-        if u == "(-)": return "rgba(239,83,80,0.15)"
-        return "transparent"
-
-    hdr_style = "background:#1F3864;color:#58A6FF;font-weight:700;font-size:12px;padding:10px 14px;text-align:center;border:1px solid #30363D;"
-    row_style = "border:1px solid #21262D;padding:9px 14px;font-size:12px;text-align:center;vertical-align:middle;"
-    alt_bg    = "#161B22"
-    reg_bg    = "#0D1117"
-
-    html = f"""
-    <div style='margin-bottom:6px;'>
-      <div style='background:#2E75B6;color:white;font-weight:700;font-size:13px;
-                  padding:8px 16px;border-radius:6px 6px 0 0;display:inline-block;'>
-        {label} GÖSTERGE ŞABLONU
-      </div>
+def render_indicator_table(rows, label, key_prefix):
+    """Streamlit native tablo olarak göster."""
+    st.markdown(f"""
+    <div style='background:#2E75B6;color:white;font-weight:700;font-size:13px;
+                padding:8px 16px;border-radius:6px 6px 0 0;margin-bottom:2px;'>
+        {label}
     </div>
-    <table style='width:100%;border-collapse:collapse;border-radius:0 6px 6px 6px;overflow:hidden;'>
-      <thead>
-        <tr>
-          <th style='{hdr_style}text-align:left;min-width:110px;'>İNDİKATÖR</th>
-          <th style='{hdr_style}'>SİNYAL VAR MI?<br><small>YOKSA SON SİNYAL</small></th>
-          <th style='{hdr_style}'>YÖN</th>
-          <th style='{hdr_style}'>KONUM</th>
-          <th style='{hdr_style}'>UYUŞMAZLIK</th>
-        </tr>
-      </thead>
-      <tbody>
-    """
+    """, unsafe_allow_html=True)
+
+    headers = ["İNDİKATÖR", "SİNYAL / SON SİNYAL", "YÖN", "KONUM", "UYUŞMAZLIK"]
+
+    # Her satırı ayrı st.columns ile çiz
+    col_w = [1.2, 1.4, 0.5, 1.0, 1.0]
+
+    # Başlık satırı
+    hcols = st.columns(col_w)
+    for hc, h in zip(hcols, headers):
+        hc.markdown(
+            f"<div style='background:#1F3864;color:#58A6FF;font-weight:700;"
+            f"font-size:11px;padding:7px 6px;text-align:center;"
+            f"border-bottom:2px solid #2E75B6;'>{h}</div>",
+            unsafe_allow_html=True
+        )
 
     for i, (ind, sinyal, yon, konum, uyus) in enumerate(rows):
-        bg   = alt_bg if i % 2 == 0 else reg_bg
-        sc   = sinyal_clr(sinyal)
-        uc   = uyus_clr(uyus)
-        ubg  = uyus_bg(uyus)
-        yon_clr = "#26A69A" if yon == "↑" else "#EF5350"
-        html += f"""
-        <tr style='background:{bg};'>
-          <td style='{row_style}text-align:left;font-weight:700;color:#C9D1D9;padding-left:16px;'>{ind}</td>
-          <td style='{row_style}color:{sc};font-weight:600;'>{sinyal}</td>
-          <td style='{row_style}font-size:18px;color:{yon_clr};font-weight:700;'>{yon}</td>
-          <td style='{row_style}color:#C9D1D9;'>{konum}</td>
-          <td style='{row_style}background:{ubg};color:{uc};font-weight:700;font-size:14px;'>{uyus}</td>
-        </tr>"""
+        bg = "#161B22" if i % 2 == 0 else "#0D1117"
 
-    html += "</tbody></table>"
-    return html
+        # Sinyal rengi
+        if any(x in sinyal for x in ["Alış", "Alımda", "Aşırı Satım"]):
+            sc = "#26A69A"
+        elif any(x in sinyal for x in ["Satış", "Satışta", "Aşırı Alım"]):
+            sc = "#EF5350"
+        else:
+            sc = "#8B949E"
+
+        yon_clr = "#26A69A" if yon == "↑" else "#EF5350"
+
+        if uyus == "(+)":   uc = "#26A69A"; ubg = "rgba(38,166,154,0.15)"
+        elif uyus == "(-)": uc = "#EF5350"; ubg = "rgba(239,83,80,0.15)"
+        else:               uc = "#484F58"; ubg = "transparent"
+
+        cell = (f"padding:8px 6px;text-align:center;background:{bg};"
+                f"border-bottom:1px solid #21262D;font-size:12px;")
+
+        rcols = st.columns(col_w)
+        rcols[0].markdown(
+            f"<div style='{cell}text-align:left;padding-left:10px;"
+            f"font-weight:700;color:#C9D1D9;'>{ind}</div>",
+            unsafe_allow_html=True)
+        rcols[1].markdown(
+            f"<div style='{cell}color:{sc};font-weight:600;'>{sinyal}</div>",
+            unsafe_allow_html=True)
+        rcols[2].markdown(
+            f"<div style='{cell}font-size:18px;color:{yon_clr};font-weight:700;'>{yon}</div>",
+            unsafe_allow_html=True)
+        rcols[3].markdown(
+            f"<div style='{cell}color:#C9D1D9;'>{konum}</div>",
+            unsafe_allow_html=True)
+        rcols[4].markdown(
+            f"<div style='{cell}background:{ubg};color:{uc};"
+            f"font-weight:700;font-size:14px;'>{uyus}</div>",
+            unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # DİVERGENCE TESPİTİ
@@ -960,13 +962,13 @@ with st.expander("📋 GÖSTERGE ŞABLON TABLOSU", expanded=True):
     with col_g:
         try:
             rows_g = build_indicator_table(df_d, rp, mp)
-            st.markdown(render_indicator_table(rows_g, "📅 GÜNLÜK"), unsafe_allow_html=True)
+            render_indicator_table(rows_g, "📅 GÜNLÜK GÖSTERGE ŞABLONU", "gunluk")
         except Exception as e:
             st.warning(f"Günlük tablo hesaplanamadı: {e}")
     with col_h:
         try:
             rows_h = build_indicator_table(df_w, rp, mp)
-            st.markdown(render_indicator_table(rows_h, "📆 HAFTALIK"), unsafe_allow_html=True)
+            render_indicator_table(rows_h, "📆 HAFTALIK GÖSTERGE ŞABLONU", "haftalik")
         except Exception as e:
             st.warning(f"Haftalık tablo hesaplanamadı: {e}")
     st.markdown("""
