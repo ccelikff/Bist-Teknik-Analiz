@@ -3,6 +3,8 @@ BİST & EMTİA TEKNİK ANALİZ
 - Çoklu Zaman Dilimi Karşılaştırma
 - Divergence Tespiti
 - Emtia (Altın, Gümüş, Platin, Paladyum)
+- BİST Endeksleri
+- Telegram Sinyal Botu
 """
 
 import warnings
@@ -12,6 +14,8 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import requests
+from datetime import datetime
 
 warnings.filterwarnings("ignore")
 
@@ -19,11 +23,88 @@ warnings.filterwarnings("ignore")
 # EMTİA TANIMLARI
 # ─────────────────────────────────────────────
 EMTIALAR = {
-    "🥇 Altın":     {"ticker": "GC=F",  "sembol": "ALTIN",   "para": "$", "renk": "#FFD700"},
-    "🥈 Gümüş":    {"ticker": "SI=F",  "sembol": "GUMUS",   "para": "$", "renk": "#C0C0C0"},
-    "💎 Platin":    {"ticker": "PL=F",  "sembol": "PLATIN",  "para": "$", "renk": "#E5E4E2"},
-    "🔮 Paladyum":  {"ticker": "PA=F",  "sembol": "PALADYUM","para": "$", "renk": "#CED0DD"},
+    "🥇 Altın":    {"ticker": "GC=F", "sembol": "ALTIN",    "para": "$", "renk": "#FFD700"},
+    "🥈 Gümüş":   {"ticker": "SI=F", "sembol": "GUMUS",    "para": "$", "renk": "#C0C0C0"},
+    "💎 Platin":   {"ticker": "PL=F", "sembol": "PLATIN",   "para": "$", "renk": "#E5E4E2"},
+    "🔮 Paladyum": {"ticker": "PA=F", "sembol": "PALADYUM", "para": "$", "renk": "#CED0DD"},
 }
+
+# ─────────────────────────────────────────────
+# BİST ENDEKSLERİ
+# ─────────────────────────────────────────────
+ENDEKSLER = {
+    "📊 BIST 100": {"ticker": "XU100.IS", "sembol": "BIST100", "para": "₺"},
+    "📊 BIST 30":  {"ticker": "XU030.IS", "sembol": "BIST30",  "para": "₺"},
+    "📊 BIST 50":  {"ticker": "XU050.IS", "sembol": "BIST50",  "para": "₺"},
+    "🏦 BIST Banka":   {"ticker": "XBANK.IS", "sembol": "BIST BANKA",   "para": "₺"},
+    "🏭 BIST Sanayi":  {"ticker": "XSIND.IS", "sembol": "BIST SANAYİ",  "para": "₺"},
+    "🛒 BIST Ticaret": {"ticker": "XTCRT.IS", "sembol": "BIST TİCARET", "para": "₺"},
+    "⚡ BIST Enerji":  {"ticker": "XELKT.IS", "sembol": "BIST ENERJİ",  "para": "₺"},
+    "🏗️ BIST GYO":    {"ticker": "XGMYO.IS", "sembol": "BIST GYO",     "para": "₺"},
+    "💊 BIST Sağlık":  {"ticker": "XSAGK.IS", "sembol": "BIST SAĞLIK",  "para": "₺"},
+    "💻 BIST Teknoloji":{"ticker":"XBLSM.IS", "sembol": "BIST TEKNOLOJİ","para": "₺"},
+}
+
+# ─────────────────────────────────────────────
+# TELEGRAM BOT
+# ─────────────────────────────────────────────
+def telegram_send(bot_token, chat_id, message):
+    """Telegram'a mesaj gönder."""
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    try:
+        resp = requests.post(url, data={
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML",
+        }, timeout=10)
+        return resp.status_code == 200, resp.json()
+    except Exception as e:
+        return False, str(e)
+
+def build_telegram_message(disp_name, para, last, chg, chg_pct,
+                            rows_g, rows_h, bull_divs, bear_divs):
+    """Teknik analiz özet mesajı oluştur."""
+    sign = "▲" if chg >= 0 else "▼"
+    now  = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    msg = f"""📊 <b>{disp_name} — Teknik Analiz Raporu</b>
+🕐 {now}
+
+💰 <b>Fiyat:</b> {para}{float(last["Close"]):.2f}  {sign} {para}{abs(chg):.2f} ({chg_pct:+.2f}%)
+📈 Yüksek: {para}{float(last["High"]):.2f}  |  📉 Düşük: {para}{float(last["Low"]):.2f}
+
+━━━━━━━━━━━━━━━━━━━━
+📅 <b>GÜNLÜK GÖSTERGE DURUMU</b>
+"""
+    for ind, sinyal, yon, konum, uyus in rows_g:
+        emoji = "🟢" if any(x in sinyal for x in ["Alış","Alımda","Aşırı Satım"]) else \
+                "🔴" if any(x in sinyal for x in ["Satış","Satışta","Aşırı Alım"]) else "⬜"
+        uyus_str = f" | Uyuşmazlık: <b>{uyus}</b>" if uyus != "Yok" else ""
+        msg += f"{emoji} <b>{ind}:</b> {sinyal} {yon}{uyus_str}\n"
+
+    msg += f"\n📆 <b>HAFTALIK GÖSTERGE DURUMU</b>\n"
+    for ind, sinyal, yon, konum, uyus in rows_h:
+        emoji = "🟢" if any(x in sinyal for x in ["Alış","Alımda","Aşırı Satım"]) else \
+                "🔴" if any(x in sinyal for x in ["Satış","Satışta","Aşırı Alım"]) else "⬜"
+        uyus_str = f" | Uyuşmazlık: <b>{uyus}</b>" if uyus != "Yok" else ""
+        msg += f"{emoji} <b>{ind}:</b> {sinyal} {yon}{uyus_str}\n"
+
+    if bull_divs:
+        msg += f"\n🔼 <b>Bullish Divergence:</b> {bull_divs[-1]['tarih']} tarihinde tespit edildi\n"
+    if bear_divs:
+        msg += f"\n🔽 <b>Bearish Divergence:</b> {bear_divs[-1]['tarih']} tarihinde tespit edildi\n"
+
+    # Genel eğilim
+    al_g  = sum(1 for r in rows_g if any(x in r[1] for x in ["Alış","Alımda","Aşırı Satım"]))
+    sat_g = sum(1 for r in rows_g if any(x in r[1] for x in ["Satış","Satışta","Aşırı Alım"]))
+    if al_g > sat_g:   genel = "📗 ALIM EĞİLİMİ"
+    elif sat_g > al_g: genel = "📕 SATIM EĞİLİMİ"
+    else:              genel = "⬜ NÖTR"
+
+    msg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🎯 <b>GENEL EĞİLİM:</b> {genel} ({al_g} alım / {sat_g} satım)\n"
+    msg += f"\n⚠️ <i>Yatırım tavsiyesi değildir.</i>"
+    return msg
 
 # ─────────────────────────────────────────────
 # SAYFA AYARLARI
@@ -408,7 +489,63 @@ def detect_divergence(close, rsi, window=5, lookback=60):
     return bulls[-3:], bears[-3:]   # son 3'er tane
 
 # ─────────────────────────────────────────────
-# SİNYAL SİSTEMİ
+# OTOMATİK TRENDLİNE
+# ─────────────────────────────────────────────
+def calc_trendlines(high, low, close, window=8, n_lines=2):
+    """
+    Pivot tepelerden düşen direnç trendlini,
+    Pivot diplerden yükselen destek trendlini hesaplar.
+    Her biri için lineer regresyon kullanır.
+    """
+    n = len(close)
+    idx = np.arange(n)
+
+    # Pivot tepeler ve dipler
+    res_pivots, sup_pivots = [], []
+    for i in range(window, n - window):
+        if high.iloc[i] == high.iloc[i-window:i+window+1].max():
+            res_pivots.append(i)
+        if low.iloc[i] == low.iloc[i-window:i+window+1].min():
+            sup_pivots.append(i)
+
+    trendlines = []
+
+    def fit_line(x_pts, y_vals, color, name, extend_to=n-1):
+        if len(x_pts) < 2:
+            return None
+        # Son n_lines+2 pivotr al, en iyi uyumu bul
+        pts = x_pts[-min(len(x_pts), n_lines+3):]
+        x   = np.array(pts)
+        y   = np.array([y_vals.iloc[p] for p in pts])
+        # Lineer fit
+        coeffs = np.polyfit(x, y, 1)
+        slope, intercept = coeffs
+        # Çizginin başlangıç ve bitiş noktaları
+        x0 = pts[0]
+        x1 = extend_to
+        y0 = slope * x0 + intercept
+        y1 = slope * x1 + intercept
+        return {
+            "x":     [close.index[x0], close.index[x1]],
+            "y":     [y0, y1],
+            "color": color,
+            "name":  name,
+            "slope": slope,
+        }
+
+    # Direnç trendlini (tepelerden)
+    r_line = fit_line(res_pivots, high, "#EF5350", "Direnç Trendi")
+    if r_line:
+        trendlines.append(r_line)
+
+    # Destek trendlini (diplerden)
+    s_line = fit_line(sup_pivots, low, "#26A69A", "Destek Trendi")
+    if s_line:
+        trendlines.append(s_line)
+
+    return trendlines
+
+
 # ─────────────────────────────────────────────
 def calc_signals(close, high, low, rsi_period, mom_period):
     macd_l, macd_s, _ = calc_macd(close)
@@ -550,6 +687,17 @@ def build_figure(df, name, label, rsi_period, mom_period, show_signals, show_sr,
         line=dict(color="#FFA726", width=1.2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=ema(close,50), name="EMA 50",
         line=dict(color="#7E57C2", width=1.2)), row=1, col=1)
+
+    # ── OTOMATİK TRENDLİNELAR ──
+    trendlines = calc_trendlines(high, low, close)
+    for tl in trendlines:
+        fig.add_trace(go.Scatter(
+            x=tl["x"], y=tl["y"],
+            mode="lines",
+            name=tl["name"],
+            line=dict(color=tl["color"], width=2, dash="solid"),
+            opacity=0.85,
+        ), row=1, col=1)
 
     if show_sr:
         for lv in sup_levels:
@@ -759,14 +907,27 @@ with st.sidebar:
     st.markdown("## 📊 Teknik Analiz")
     st.markdown("---")
 
-    mod = st.radio("Piyasa Seçin", ["🇹🇷 BİST Hisseleri", "🏅 Emtia"], horizontal=False)
+    mod = st.radio("Piyasa Seçin", [
+        "🇹🇷 BİST Hisseleri",
+        "📊 BİST Endeksleri",
+        "🏅 Emtia"
+    ], horizontal=False)
     st.markdown("---")
+
+    is_commodity = False
+    is_index     = False
+    commodity_key = None
+    index_key     = None
 
     if mod == "🇹🇷 BİST Hisseleri":
         ticker_input = st.text_input("Hisse Kodu", value="THYAO",
             placeholder="THYAO, SISE, GARAN...").upper().strip()
-        is_commodity = False
-        commodity_key = None
+
+    elif mod == "📊 BİST Endeksleri":
+        index_key    = st.selectbox("Endeks Seçin", list(ENDEKSLER.keys()))
+        ticker_input = ENDEKSLER[index_key]["ticker"]
+        is_index     = True
+
     else:
         commodity_key = st.selectbox("Emtia Seçin", list(EMTIALAR.keys()))
         ticker_input  = EMTIALAR[commodity_key]["ticker"]
@@ -788,6 +949,22 @@ with st.sidebar:
 
     st.markdown("---")
     analiz_btn = st.button("🚀 ANALİZ ET")
+
+    # ── TELEGRAM AYARLARI ──
+    st.markdown("---")
+    with st.expander("📱 Telegram Sinyal Botu", expanded=False):
+        st.markdown("""<div style='font-size:11px;color:#8B949E;margin-bottom:8px;'>
+        Analiz sonucunu Telegram'a gönder.<br>
+        Bot Token ve Chat ID gerekli.
+        </div>""", unsafe_allow_html=True)
+        tg_token   = st.text_input("Bot Token", placeholder="123456:ABC-DEF...", type="password")
+        tg_chat_id = st.text_input("Chat ID",   placeholder="-100123456 veya @kanal")
+        tg_btn     = st.button("📤 Telegram'a Gönder", disabled=not(tg_token and tg_chat_id))
+        st.markdown("""<div style='font-size:10px;color:#484F58;margin-top:6px;'>
+        💡 Token almak için: @BotFather<br>
+        💡 Chat ID için: @userinfobot
+        </div>""", unsafe_allow_html=True)
+
     st.markdown("---")
     st.markdown("""<div style='font-size:11px;color:#484F58;text-align:center'>
     Veriler yfinance aracılığıyla<br>çekilmektedir.<br>⚠️ Yatırım tavsiyesi değildir.
@@ -803,6 +980,7 @@ if analiz_btn:
         "last_signals": show_signals, "last_sr": show_sr,
         "last_div": show_div, "last_mtf": show_mtf,
         "last_is_comm": is_commodity, "last_comm_key": commodity_key,
+        "last_is_idx":  is_index,     "last_idx_key":  index_key,
     })
 
 t    = st.session_state.get("last_ticker", "")
@@ -815,7 +993,9 @@ sr   = st.session_state.get("last_sr",      show_sr)
 sd   = st.session_state.get("last_div",     show_div)
 smtf = st.session_state.get("last_mtf",     show_mtf)
 is_c = st.session_state.get("last_is_comm", is_commodity)
+is_i = st.session_state.get("last_is_idx",  is_index)
 ck   = st.session_state.get("last_comm_key", commodity_key)
+ik   = st.session_state.get("last_idx_key",  index_key)
 
 if not t:
     st.markdown("""<div style='text-align:center;padding:80px;color:#484F58;'>
@@ -831,9 +1011,16 @@ with st.spinner(f"📥 {t} verisi çekiliyor..."):
         df_d = fetch_commodity(t, gd,   "1d")
         df_w = fetch_commodity(t, hd,   "1wk")
         df_m = fetch_commodity(t, 1825, "1mo")
-        para      = EMTIALAR[ck]["para"] if ck else "$"
+        para      = EMTIALAR[ck]["para"]   if ck else "$"
         disp_name = EMTIALAR[ck]["sembol"] if ck else t
         borsа     = "Vadeli Emtia"
+    elif is_i:
+        df_d = fetch_bist(t, gd,   "1d")
+        df_w = fetch_bist(t, hd,   "1wk")
+        df_m = fetch_bist(t, 1825, "1mo")
+        para      = ENDEKSLER[ik]["para"]   if ik else "₺"
+        disp_name = ENDEKSLER[ik]["sembol"] if ik else t
+        borsа     = "BİST Endeksi"
     else:
         df_d = fetch_bist(t, gd,   "1d")
         df_w = fetch_bist(t, hd,   "1wk")
@@ -874,30 +1061,6 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
-
-# ── Sinyal Özeti ──
-if ss:
-    summary   = signal_summary(df_d["Close"], df_d["High"], df_d["Low"], rp, mp)
-    al_count  = sum(1 for r in summary if r[3]=="al")
-    sat_count = sum(1 for r in summary if r[3]=="sat")
-    total     = len(summary)
-    if al_count > sat_count:   oclr="#26A69A"; otxt=f"📗 GENEL: ALIM EĞİLİMİ ({al_count}/{total})"
-    elif sat_count > al_count: oclr="#EF5350"; otxt=f"📕 GENEL: SATIM EĞİLİMİ ({sat_count}/{total})"
-    else:                      oclr="#8B949E"; otxt=f"⬜ GENEL: NÖTR ({al_count}/{sat_count})"
-    with st.expander("🔔 GÜNLÜK SİNYAL ÖZETİ", expanded=True):
-        st.markdown(f"""<div style='background:rgba(0,0,0,0.3);border:2px solid {oclr};
-            border-radius:8px;padding:10px 16px;margin-bottom:10px;
-            font-size:15px;font-weight:700;color:{oclr};'>{otxt}</div>""", unsafe_allow_html=True)
-        cols = st.columns(len(summary))
-        for col, (ind, durum, aciklama, tip) in zip(cols, summary):
-            bg  = "rgba(38,166,154,0.12)" if tip=="al" else "rgba(239,83,80,0.12)" if tip=="sat" else "rgba(50,50,50,0.2)"
-            brd = "#26A69A" if tip=="al" else "#EF5350" if tip=="sat" else "#30363D"
-            col.markdown(f"""<div style='background:{bg};border:1px solid {brd};border-radius:8px;
-                padding:10px;text-align:center;'>
-                <div style='font-size:11px;color:#8B949E;margin-bottom:4px;'>{ind}</div>
-                <div style='font-size:12px;font-weight:700;'>{durum}</div>
-                <div style='font-size:10px;color:#8B949E;margin-top:4px;'>{aciklama}</div>
-                </div>""", unsafe_allow_html=True)
 
 # ── Divergence Özeti ──
 if sd:
@@ -959,16 +1122,17 @@ if sr:
 # ── Gösterge Şablon Tablosu ──
 with st.expander("📋 GÖSTERGE ŞABLON TABLOSU", expanded=True):
     col_g, col_h = st.columns(2)
+    rows_g_data, rows_h_data = [], []
     with col_g:
         try:
-            rows_g = build_indicator_table(df_d, rp, mp)
-            render_indicator_table(rows_g, "📅 GÜNLÜK GÖSTERGE ŞABLONU", "gunluk")
+            rows_g_data = build_indicator_table(df_d, rp, mp)
+            render_indicator_table(rows_g_data, "📅 GÜNLÜK GÖSTERGE ŞABLONU", "gunluk")
         except Exception as e:
             st.warning(f"Günlük tablo hesaplanamadı: {e}")
     with col_h:
         try:
-            rows_h = build_indicator_table(df_w, rp, mp)
-            render_indicator_table(rows_h, "📆 HAFTALIK GÖSTERGE ŞABLONU", "haftalik")
+            rows_h_data = build_indicator_table(df_w, rp, mp)
+            render_indicator_table(rows_h_data, "📆 HAFTALIK GÖSTERGE ŞABLONU", "haftalik")
         except Exception as e:
             st.warning(f"Haftalık tablo hesaplanamadı: {e}")
     st.markdown("""
@@ -980,6 +1144,24 @@ with st.expander("📋 GÖSTERGE ŞABLON TABLOSU", expanded=True):
       <span style='color:#484F58'>Yok = Uyuşmazlık yok</span>
     </div>
     """, unsafe_allow_html=True)
+
+# ── Telegram Gönder ──
+if tg_btn and tg_token and tg_chat_id:
+    with st.spinner("📤 Telegram'a gönderiliyor..."):
+        try:
+            rsi_tmp = calc_rsi(df_d["Close"], rp)
+            bd, brd = detect_divergence(df_d["Close"], rsi_tmp, lookback=80)
+            msg = build_telegram_message(
+                disp_name, para, last, chg, chg_pct,
+                rows_g_data, rows_h_data, bd, brd
+            )
+            ok, result = telegram_send(tg_token, tg_chat_id, msg)
+            if ok:
+                st.success("✅ Telegram'a başarıyla gönderildi!")
+            else:
+                st.error(f"❌ Gönderilemedi: {result}")
+        except Exception as e:
+            st.error(f"❌ Hata: {e}")
 
 # ── Sekmeler ──
 tabs = st.tabs(["📈 Günlük", "📊 Haftalık", "🕐 Çoklu Zaman Dilimi"])
