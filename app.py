@@ -19,8 +19,21 @@ import time
 warnings.filterwarnings("ignore")
 
 # ─────────────────────────────────────────────
-# BİST100 HİSSE LİSTESİ
+# BİST HİSSE LİSTELERİ
 # ─────────────────────────────────────────────
+BIST30_HISSELER = [
+    "AKBNK","ARCLK","ASELS","BIMAS","EKGYO","EREGL","FROTO","GARAN",
+    "HALKB","ISCTR","KCHOL","KOZAA","KOZAL","KRDMD","ODAS","PETKM",
+    "PGSUS","SAHOL","SASA","SISE","TAVHL","TCELL","THYAO","TKFEN",
+    "TOASO","TTKOM","TUPRS","VAKBN","YKBNK","EREGL",
+]
+
+BIST50_HISSELER = BIST30_HISSELER + [
+    "AEFES","AGHOL","AKSEN","ALKIM","ALVES","ANSGR","ARSAN","AVHOL",
+    "AYGAZ","BAGFS","BRISA","BTCIM","CCOLA","CEMTS","CIMSA","DOAS",
+    "ENKAI","HEKTS","LOGO","MPARK",
+]
+
 BIST100_HISSELER = [
     "ACSEL","ADEL","ADNAC","AFYON","AGESA","AGHOL","AGYO","AHGAZ","AKBNK","AKCNS",
     "AKENR","AKFGY","AKFYE","AKGRT","AKMGY","AKSA","AKSEN","AKSGY","AKSUE","AKYHO",
@@ -71,6 +84,15 @@ BIST100_HISSELER = [
     "YBTAS","YEOTK","YESIL","YGYO","YIGIT","YKBNK","YKSLN","YONGA","YUNSA","ZEDUR",
     "ZOREN","ZORLU","ZRGYO",
 ]
+
+# Tarama grupları
+TARAMA_GRUPLARI = {
+    "📊 BIST 30  (30 hisse — hızlı)":   BIST30_HISSELER,
+    "📊 BIST 50  (50 hisse — hızlı)":   BIST50_HISSELER,
+    "📊 BIST 100 (100 hisse — orta)":   BIST100_HISSELER[:100],
+    "📊 Tüm BİST (400+ hisse — yavaş)": BIST100_HISSELER,
+    "✏️ Özel Liste":                     [],
+}
 
 # ─────────────────────────────────────────────
 # EMTİA TANIMLARI
@@ -1083,15 +1105,23 @@ with st.sidebar:
         sc_lower  = st.number_input("RSİ Alt Eşik (önceki)",  5,  50, 30, key="sc_low")
         sc_upper  = st.number_input("RSİ Üst Eşik (şimdiki)", 10, 70, 40, key="sc_up")
         sc_period = st.number_input("RSİ Periyot",             2,  50, 10, key="sc_per")
-        sc_liste  = st.multiselect(
+
+        sc_grup = st.selectbox(
             "Hisse Listesi",
-            ["Tüm BİST (yavaş ~10dk)", "Özel Liste"],
-            default=["Tüm BİST (yavaş ~10dk)"]
+            list(TARAMA_GRUPLARI.keys()),
+            index=0,
+            key="sc_grup"
         )
-        if "Özel Liste" in sc_liste:
+        # Seçilen gruba göre hisse sayısını göster
+        if sc_grup != "✏️ Özel Liste":
+            n = len(TARAMA_GRUPLARI[sc_grup])
+            st.caption(f"ℹ️ {n} hisse taranacak")
+
+        if sc_grup == "✏️ Özel Liste":
             ozel_liste = st.text_area(
                 "Hisseler (virgülle ayırın)",
-                placeholder="THYAO, SISE, GARAN, EREGL..."
+                placeholder="THYAO, SISE, GARAN, EREGL...",
+                key="sc_ozel_txt"
             )
         else:
             ozel_liste = ""
@@ -1155,7 +1185,7 @@ if analiz_btn:
         st.session_state["sc_lower"]  = sc_lower
         st.session_state["sc_upper"]  = sc_upper
         st.session_state["sc_period"] = sc_period
-        st.session_state["sc_liste"]  = sc_liste
+        st.session_state["sc_grup"]   = sc_grup
         st.session_state["sc_ozel"]   = ozel_liste
 
 # ── TARAYICI MODU ──
@@ -1163,13 +1193,16 @@ if st.session_state.get("last_is_scan") and analiz_btn:
     _lower  = st.session_state.get("sc_lower",  30)
     _upper  = st.session_state.get("sc_upper",  40)
     _period = st.session_state.get("sc_period", 10)
-    _liste  = st.session_state.get("sc_liste",  ["Tüm BİST (yavaş ~10dk)"])
+    _grup   = st.session_state.get("sc_grup",   list(TARAMA_GRUPLARI.keys())[0])
     _ozel   = st.session_state.get("sc_ozel",   "")
 
-    if "Özel Liste" in _liste and _ozel.strip():
+    if _grup == "✏️ Özel Liste" and _ozel.strip():
         hisseler = [h.strip().upper() for h in _ozel.split(",") if h.strip()]
     else:
-        hisseler = BIST100_HISSELER
+        hisseler = TARAMA_GRUPLARI.get(_grup, BIST30_HISSELER)
+
+    # Tekrarları kaldır
+    hisseler = list(dict.fromkeys(hisseler))
 
     st.markdown(f"""
     <div style='background:#161B22;border:1px solid #2E75B6;border-radius:10px;
