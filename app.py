@@ -705,166 +705,278 @@ def calc_trendlines(high, low, close, window=8, n_lines=2):
     return trendlines
 
 # ─────────────────────────────────────────────
-# ATR BAZLI SWING TEPE / DİP İNDİKATÖRÜ
+# ATR BAZLI SWING İNDİKATÖRÜ — GELİŞMİŞ
 # ─────────────────────────────────────────────
 def calc_atr_swing(high, low, close, atr_period=14, atr_mult=1.5, swing_window=5):
     """
-    ATR bazlı dinamik Swing Tepe ve Dip noktaları bulur.
+    ATR bazlı tutarlı Swing Tepe/Dip tespiti.
 
-    Mantık:
-    - ATR ile o anki volatilite ölçülür
-    - Bir nokta swing tepe sayılır: etrafındaki en yüksek nokta VE
-      sağındaki/solundaki mumdan ATR'nin atr_mult katı kadar yüksek
-    - Dip için tersi geçerli
+    Algoritma:
+    1. Katı pivot kuralı: Tepe, her iki yanda da swing_window kadar mumdan
+       kesinlikle yüksek olmalı (>=  değil, tam max olmalı)
+    2. ATR filtresi: Tepe/dip, komşu swingden en az atr_mult * ATR kadar
+       uzakta olmalı → gürültü elenir, tutarlı sayı sağlanır
+    3. Her pivot için yapı etiketi: HH/LH (tepeler), HL/LL (dipler)
+    4. Kırılım sinyali: Son swing tepesi kırılırsa AL, dibi kırılırsa SAT
 
-    Döndürür:
-      swing_highs: [(index, fiyat, tarih, atr_degeri), ...]
-      swing_lows:  [(index, fiyat, tarih, atr_degeri), ...]
+    Döndürür: highs listesi, lows listesi, signals listesi, trend_dir str
     """
     n   = len(close)
     atr = calc_atr(high, low, close, atr_period)
 
-    swing_highs = []
-    swing_lows  = []
+    raw_highs, raw_lows = [], []
 
+    # ── 1. Katı pivot tespiti ──
     for i in range(swing_window, n - swing_window):
-        atr_val  = float(atr.iloc[i])
-        high_val = float(high.iloc[i])
-        low_val  = float(low.iloc[i])
+        h_val = float(high.iloc[i])
+        l_val = float(low.iloc[i])
 
-        # Sol ve sağ penceredeki max/min değerler
-        left_high  = high.iloc[i-swing_window:i].max()
-        right_high = high.iloc[i+1:i+swing_window+1].max()
-        left_low   = low.iloc[i-swing_window:i].min()
-        right_low  = low.iloc[i+1:i+swing_window+1].min()
+        # Tepe: penceredeki en yüksek nokta olmalı (eşitlik yok)
+        window_highs = high.iloc[i - swing_window: i + swing_window + 1]
+        if h_val == window_highs.max() and list(window_highs).count(h_val) == 1:
+            raw_highs.append({
+                "idx":   i,
+                "fiyat": round(h_val, 4),
+                "tarih": close.index[i],
+                "atr":   round(float(atr.iloc[i]), 4),
+            })
 
-        # ATR filtresi: sadece yeterince belirgin noktaları al
-        threshold = atr_val * atr_mult
+        # Dip: penceredeki en düşük nokta olmalı
+        window_lows = low.iloc[i - swing_window: i + swing_window + 1]
+        if l_val == window_lows.min() and list(window_lows).count(l_val) == 1:
+            raw_lows.append({
+                "idx":   i,
+                "fiyat": round(l_val, 4),
+                "tarih": close.index[i],
+                "atr":   round(float(atr.iloc[i]), 4),
+            })
 
-        # Swing Tepe: sol ve sağdan ATR * mult kadar yüksek
-        if (high_val >= left_high and
-            high_val >= right_high and
-            high_val - left_high  >= threshold * 0.3 or
-            high_val - right_high >= threshold * 0.3):
-            if high_val == high.iloc[i-swing_window:i+swing_window+1].max():
-                swing_highs.append({
+    # ── 2. ATR filtresi: çok yakın pivotları temizle ──
+    def atr_filter(pivots, key="fiyat"):
+        if not pivots:
+            return []
+        filtered = [pivots[0]]
+        for p in pivots[1:]:
+            prev = filtered[-1]
+            min_dist = prev["atr"] * atr_mult
+            if abs(p["fiyat"] - prev["fiyat"]) >= min_dist:
+                filtered.append(p)
+            else:
+                # Tepeler için daha yüksek olanı, dipler için daha düşük olanı tut
+                if key == "high" and p["fiyat"] > prev["fiyat"]:
+                    filtered[-1] = p
+                elif key == "low" and p["fiyat"] < prev["fiyat"]:
+                    filtered[-1] = p
+        return filtered
+
+    filtered_highs = atr_filter(raw_highs, "high")
+    filtered_lows  = atr_filter(raw_lows,  "low")
+
+    # ── 3. HH / LH / HL / LL yapı etiketleri ──
+    for i, h in enumerate(filtered_highs):
+        if i == 0:
+            h["etiket"] = "SH"   # İlk swing high
+        else:
+            h["etiket"] = "HH" if h["fiyat"] > filtered_highs[i-1]["fiyat"] else "LH"
+
+    for i, l in enumerate(filtered_lows):
+        if i == 0:
+            l["etiket"] = "SL"   # İlk swing low
+        else:
+            l["etiket"] = "HL" if l["fiyat"] > filtered_lows[i-1]["fiyat"] else "LL"
+
+    # ── 4. Trend yönü tespiti (son 3 swing) ──
+    trend_dir = "NÖTR"
+    if len(filtered_highs) >= 2 and len(filtered_lows) >= 2:
+        last_highs = filtered_highs[-2:]
+        last_lows  = filtered_lows[-2:]
+        hh = last_highs[-1]["fiyat"] > last_highs[-2]["fiyat"]  # Higher High
+        hl = last_lows[-1]["fiyat"]  > last_lows[-2]["fiyat"]   # Higher Low
+        lh = last_highs[-1]["fiyat"] < last_highs[-2]["fiyat"]  # Lower High
+        ll = last_lows[-1]["fiyat"]  < last_lows[-2]["fiyat"]   # Lower Low
+
+        if hh and hl:
+            trend_dir = "YÜKSELİŞ"
+        elif lh and ll:
+            trend_dir = "DÜŞÜŞ"
+        elif hh or hl:
+            trend_dir = "ZAYIF YÜKSELİŞ"
+        elif lh or ll:
+            trend_dir = "ZAYIF DÜŞÜŞ"
+
+    # ── 5. Kırılım sinyalleri ──
+    signals = []
+    if filtered_highs and filtered_lows:
+        last_sh = filtered_highs[-1]  # Son swing high = direnç
+        last_sl = filtered_lows[-1]   # Son swing low  = destek
+
+        # Son 5 mumda kırılım var mı?
+        for i in range(max(0, n-5), n):
+            c_val = float(close.iloc[i])
+            # AL: Kapanış son swing tepeyi kırdı
+            if c_val > last_sh["fiyat"] and i > last_sh["idx"]:
+                signals.append({
                     "idx":   i,
-                    "fiyat": round(high_val, 4),
                     "tarih": close.index[i],
-                    "atr":   round(atr_val, 4),
+                    "tip":   "AL",
+                    "fiyat": round(c_val, 4),
+                    "seviye": last_sh["fiyat"],
                 })
-
-        # Swing Dip: sol ve sağdan ATR * mult kadar düşük
-        if (low_val <= left_low and
-            low_val <= right_low and
-            left_low  - low_val >= threshold * 0.3 or
-            right_low - low_val >= threshold * 0.3):
-            if low_val == low.iloc[i-swing_window:i+swing_window+1].min():
-                swing_lows.append({
+                break
+            # SAT: Kapanış son swing dibi kırdı
+            if c_val < last_sl["fiyat"] and i > last_sl["idx"]:
+                signals.append({
                     "idx":   i,
-                    "fiyat": round(low_val, 4),
                     "tarih": close.index[i],
-                    "atr":   round(atr_val, 4),
+                    "tip":   "SAT",
+                    "fiyat": round(c_val, 4),
+                    "seviye": last_sl["fiyat"],
                 })
+                break
 
-    # Son N swing noktasını döndür (grafik kalabalık olmasın)
-    return swing_highs[-20:], swing_lows[-20:]
+    # Son 12 swing al — ne az ne çok
+    return filtered_highs[-12:], filtered_lows[-12:], signals, trend_dir
 
 
-def add_swing_to_fig(fig, df, swing_highs, swing_lows, row=1):
-    """Swing noktalarını Plotly grafiğine ekle."""
+def add_swing_to_fig(fig, df, swing_highs, swing_lows, signals, trend_dir, row=1, para="₺"):
+    """Gelişmiş Swing göstergesini Plotly grafiğine ekle."""
 
-    # Swing Tepeler — kırmızı üçgen aşağı
-    if swing_highs:
-        sh_x = [df.index[s["idx"]] for s in swing_highs]
-        sh_y = [s["fiyat"] * 1.002  for s in swing_highs]
-        sh_t = [f"🔴 Swing Tepe<br>₺{s['fiyat']:.2f}<br>ATR: {s['atr']:.2f}"
-                for s in swing_highs]
-        fig.add_trace(go.Scatter(
-            x=sh_x, y=sh_y,
-            mode="markers+text",
-            name="Swing Tepe",
-            text=["T" for _ in swing_highs],
-            textposition="top center",
-            textfont=dict(color="#FF5252", size=9, family="Arial Black"),
-            marker=dict(
-                symbol="triangle-down",
-                size=12,
-                color="#FF5252",
-                line=dict(color="#B71C1C", width=1),
-            ),
-            hovertext=sh_t,
-            hoverinfo="text",
-            showlegend=True,
-        ), row=row, col=1)
+    last_price = float(df["Close"].iloc[-1])
 
-    # Swing Dipler — yeşil üçgen yukarı
-    if swing_lows:
-        sl_x = [df.index[s["idx"]] for s in swing_lows]
-        sl_y = [s["fiyat"] * 0.998  for s in swing_lows]
-        sl_t = [f"🟢 Swing Dip<br>₺{s['fiyat']:.2f}<br>ATR: {s['atr']:.2f}"
-                for s in swing_lows]
-        fig.add_trace(go.Scatter(
-            x=sl_x, y=sl_y,
-            mode="markers+text",
-            name="Swing Dip",
-            text=["D" for _ in swing_lows],
-            textposition="bottom center",
-            textfont=dict(color="#69F0AE", size=9, family="Arial Black"),
-            marker=dict(
-                symbol="triangle-up",
-                size=12,
-                color="#69F0AE",
-                line=dict(color="#00C853", width=1),
-            ),
-            hovertext=sl_t,
-            hoverinfo="text",
-            showlegend=True,
-        ), row=row, col=1)
-
-    # Swing noktalarını birbirine çizgi ile bağla (zigzag)
-    all_swings = (
+    # ── ZigZag çizgisi (tüm swingleri kronolojik sıraya koy) ──
+    all_pts = (
         [{"idx": s["idx"], "fiyat": s["fiyat"], "tip": "tepe"} for s in swing_highs] +
         [{"idx": s["idx"], "fiyat": s["fiyat"], "tip": "dip"}  for s in swing_lows]
     )
-    all_swings.sort(key=lambda x: x["idx"])
+    all_pts.sort(key=lambda x: x["idx"])
 
-    if len(all_swings) >= 2:
-        zx = [df.index[s["idx"]] for s in all_swings]
-        zy = [s["fiyat"]          for s in all_swings]
+    if len(all_pts) >= 2:
+        # Trend rengine göre zigzag rengi
+        zclr = ("rgba(38,166,154,0.5)"  if trend_dir in ("YÜKSELİŞ","ZAYIF YÜKSELİŞ")
+                else "rgba(239,83,80,0.5)" if trend_dir in ("DÜŞÜŞ","ZAYIF DÜŞÜŞ")
+                else "rgba(255,235,59,0.4)")
         fig.add_trace(go.Scatter(
-            x=zx, y=zy,
+            x=[df.index[p["idx"]] for p in all_pts],
+            y=[p["fiyat"] for p in all_pts],
             mode="lines",
-            name="Swing ZigZag",
-            line=dict(color="rgba(255,235,59,0.4)", width=1.2, dash="dot"),
-            showlegend=True,
+            name=f"Swing ({trend_dir})",
+            line=dict(color=zclr, width=1.5, dash="dot"),
             hoverinfo="skip",
+            showlegend=True,
         ), row=row, col=1)
 
+    # ── Swing Tepeler ──
+    etiket_renk = {"HH": "#FF1744", "LH": "#FF8A80", "SH": "#FF5252"}
+    for s in swing_highs:
+        clr  = etiket_renk.get(s["etiket"], "#FF5252")
+        fig.add_trace(go.Scatter(
+            x=[df.index[s["idx"]]],
+            y=[s["fiyat"] * 1.003],
+            mode="markers+text",
+            name=s["etiket"],
+            text=[s["etiket"]],
+            textposition="top center",
+            textfont=dict(color=clr, size=9, family="Arial Black"),
+            marker=dict(symbol="triangle-down", size=11, color=clr,
+                        line=dict(color="white", width=0.5)),
+            hovertemplate=(f"<b>{s['etiket']}</b><br>"
+                           f"Fiyat: {para}{s['fiyat']:.2f}<br>"
+                           f"ATR: {s['atr']:.2f}<br>"
+                           f"Tarih: {s['tarih'].strftime('%d.%m.%Y') if hasattr(s['tarih'],'strftime') else s['tarih']}"
+                           "<extra></extra>"),
+            showlegend=False,
+        ), row=row, col=1)
+
+    # ── Swing Dipler ──
+    etiket_renk_l = {"HL": "#00E676", "LL": "#69F0AE", "SL": "#00C853"}
+    for s in swing_lows:
+        clr  = etiket_renk_l.get(s["etiket"], "#69F0AE")
+        fig.add_trace(go.Scatter(
+            x=[df.index[s["idx"]]],
+            y=[s["fiyat"] * 0.997],
+            mode="markers+text",
+            name=s["etiket"],
+            text=[s["etiket"]],
+            textposition="bottom center",
+            textfont=dict(color=clr, size=9, family="Arial Black"),
+            marker=dict(symbol="triangle-up", size=11, color=clr,
+                        line=dict(color="white", width=0.5)),
+            hovertemplate=(f"<b>{s['etiket']}</b><br>"
+                           f"Fiyat: {para}{s['fiyat']:.2f}<br>"
+                           f"ATR: {s['atr']:.2f}<br>"
+                           f"Tarih: {s['tarih'].strftime('%d.%m.%Y') if hasattr(s['tarih'],'strftime') else s['tarih']}"
+                           "<extra></extra>"),
+            showlegend=False,
+        ), row=row, col=1)
+
+    # ── Son Swing Seviyeleri: Dinamik Destek / Direnç ──
+    if swing_highs:
+        last_sh = swing_highs[-1]
+        fig.add_hline(
+            y=last_sh["fiyat"],
+            line=dict(color="#FF5252", width=1.2, dash="dash"),
+            annotation_text=f" Son SH: {para}{last_sh['fiyat']:.2f}",
+            annotation_font=dict(color="#FF5252", size=9),
+            annotation_position="right",
+            row=row, col=1,
+        )
+
+    if swing_lows:
+        last_sl = swing_lows[-1]
+        fig.add_hline(
+            y=last_sl["fiyat"],
+            line=dict(color="#00E676", width=1.2, dash="dash"),
+            annotation_text=f" Son SL: {para}{last_sl['fiyat']:.2f}",
+            annotation_font=dict(color="#00E676", size=9),
+            annotation_position="right",
+            row=row, col=1,
+        )
+
+    # ── AL / SAT Kırılım Etiketleri ──
+    for sig in signals:
+        is_al  = sig["tip"] == "AL"
+        clr    = "#00E676" if is_al else "#FF1744"
+        sym    = "triangle-up" if is_al else "triangle-down"
+        yoff   = sig["fiyat"] * (0.985 if is_al else 1.015)
+        label  = f"▲ AL" if is_al else f"▼ SAT"
+        htext  = (f"<b>{'AL SİNYALİ 🟢' if is_al else 'SAT SİNYALİ 🔴'}</b><br>"
+                  f"Fiyat: {para}{sig['fiyat']:.2f}<br>"
+                  f"Kırılan seviye: {para}{sig['seviye']:.2f}")
+        fig.add_trace(go.Scatter(
+            x=[df.index[sig["idx"]]],
+            y=[yoff],
+            mode="markers+text",
+            text=[label],
+            textposition="bottom center" if is_al else "top center",
+            textfont=dict(color=clr, size=11, family="Arial Black"),
+            marker=dict(symbol=sym, size=16, color=clr,
+                        line=dict(color="white", width=1)),
+            hovertemplate=htext + "<extra></extra>",
+            name=f"{'AL' if is_al else 'SAT'} Kırılım",
+            showlegend=True,
+        ), row=row, col=1)
+
+    # ── Trend Durumu Annotation ──
+    trend_clr = ("#00E676"  if trend_dir == "YÜKSELİŞ"
+                 else "#69F0AE" if trend_dir == "ZAYIF YÜKSELİŞ"
+                 else "#FF1744" if trend_dir == "DÜŞÜŞ"
+                 else "#FF8A80" if trend_dir == "ZAYIF DÜŞÜŞ"
+                 else "#FFD600")
+    trend_sym = ("▲" if "YÜKSELİŞ" in trend_dir
+                 else "▼" if "DÜŞÜŞ" in trend_dir else "↔")
+    fig.add_annotation(
+        xref="paper", yref="paper",
+        x=0.01, y=0.97,
+        text=f"<b>SWING TREND: {trend_sym} {trend_dir}</b>",
+        font=dict(color=trend_clr, size=12, family="Arial Black"),
+        bgcolor="rgba(0,0,0,0.5)",
+        bordercolor=trend_clr,
+        borderwidth=1,
+        showarrow=False,
+        row=row, col=1,
+    )
+
     return fig
-
-
-    macd_l, macd_s, _ = calc_macd(close)
-    rsi  = calc_rsi(close, rsi_period)
-    stk_k, stk_d = calc_stoch(high, low, close)
-    mom  = calc_mom(close, mom_period)
-    e20  = ema(close, 20)
-    e50  = ema(close, 50)
-    score = pd.Series(0, index=close.index, dtype=float)
-    for i in range(1, len(close)):
-        s = 0
-        if macd_l.iloc[i-1] < macd_s.iloc[i-1] and macd_l.iloc[i] > macd_s.iloc[i]: s += 1
-        elif macd_l.iloc[i-1] > macd_s.iloc[i-1] and macd_l.iloc[i] < macd_s.iloc[i]: s -= 1
-        if rsi.iloc[i-1] < 30 and rsi.iloc[i] >= 30: s += 1
-        elif rsi.iloc[i-1] > 70 and rsi.iloc[i] <= 70: s -= 1
-        if stk_k.iloc[i-1] < stk_d.iloc[i-1] and stk_k.iloc[i] > stk_d.iloc[i] and stk_k.iloc[i] < 40: s += 1
-        elif stk_k.iloc[i-1] > stk_d.iloc[i-1] and stk_k.iloc[i] < stk_d.iloc[i] and stk_k.iloc[i] > 60: s -= 1
-        if e20.iloc[i-1] < e50.iloc[i-1] and e20.iloc[i] > e50.iloc[i]: s += 1
-        elif e20.iloc[i-1] > e50.iloc[i-1] and e20.iloc[i] < e50.iloc[i]: s -= 1
-        if mom.iloc[i-1] < 0 and mom.iloc[i] >= 0: s += 1
-        elif mom.iloc[i-1] > 0 and mom.iloc[i] <= 0: s -= 1
-        score.iloc[i] = s
-    return score
 
 def signal_summary(close, high, low, rsi_period, mom_period):
     macd_l, macd_s, _ = calc_macd(close)
@@ -1029,13 +1141,13 @@ def build_figure(df, name, label, rsi_period, mom_period,
 
     # ── ATR SWING TEPE / DİP ──
     if show_swing:
-        s_highs, s_lows = calc_atr_swing(
+        s_highs, s_lows, s_signals, trend_dir = calc_atr_swing(
             high, low, close,
             atr_period=14,
             atr_mult=swing_mult,
             swing_window=swing_win,
         )
-        fig = add_swing_to_fig(fig, df, s_highs, s_lows, row=1)
+        fig = add_swing_to_fig(fig, df, s_highs, s_lows, s_signals, trend_dir, row=1, para=para)
 
     if show_sr:
         for lv in sup_levels:
