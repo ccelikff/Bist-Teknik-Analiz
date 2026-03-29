@@ -917,6 +917,32 @@ def find_support_resistance(high, low, close, window=10, max_levels=5, tolerance
     return sorted(sup), sorted(res)
 
 # ─────────────────────────────────────────────
+# SİNYAL SİSTEMİ
+# ─────────────────────────────────────────────
+def calc_signals(close, high, low, rsi_period, mom_period):
+    macd_l, macd_s, _ = calc_macd(close)
+    rsi  = calc_rsi(close, rsi_period)
+    stk_k, stk_d = calc_stoch(high, low, close)
+    mom  = calc_mom(close, mom_period)
+    e20  = ema(close, 20)
+    e50  = ema(close, 50)
+    score = pd.Series(0, index=close.index, dtype=float)
+    for i in range(1, len(close)):
+        s = 0
+        if macd_l.iloc[i-1] < macd_s.iloc[i-1] and macd_l.iloc[i] > macd_s.iloc[i]: s += 1
+        elif macd_l.iloc[i-1] > macd_s.iloc[i-1] and macd_l.iloc[i] < macd_s.iloc[i]: s -= 1
+        if rsi.iloc[i-1] < 30 and rsi.iloc[i] >= 30: s += 1
+        elif rsi.iloc[i-1] > 70 and rsi.iloc[i] <= 70: s -= 1
+        if stk_k.iloc[i-1] < stk_d.iloc[i-1] and stk_k.iloc[i] > stk_d.iloc[i] and stk_k.iloc[i] < 40: s += 1
+        elif stk_k.iloc[i-1] > stk_d.iloc[i-1] and stk_k.iloc[i] < stk_d.iloc[i] and stk_k.iloc[i] > 60: s -= 1
+        if e20.iloc[i-1] < e50.iloc[i-1] and e20.iloc[i] > e50.iloc[i]: s += 1
+        elif e20.iloc[i-1] > e50.iloc[i-1] and e20.iloc[i] < e50.iloc[i]: s -= 1
+        if mom.iloc[i-1] < 0 and mom.iloc[i] >= 0: s += 1
+        elif mom.iloc[i-1] > 0 and mom.iloc[i] <= 0: s -= 1
+        score.iloc[i] = s
+    return score
+
+# ─────────────────────────────────────────────
 # VERİ ÇEK
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=300)
