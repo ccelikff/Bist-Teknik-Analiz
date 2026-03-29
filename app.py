@@ -704,9 +704,146 @@ def calc_trendlines(high, low, close, window=8, n_lines=2):
 
     return trendlines
 
-
 # ─────────────────────────────────────────────
-def calc_signals(close, high, low, rsi_period, mom_period):
+# ATR BAZLI SWING TEPE / DİP İNDİKATÖRÜ
+# ─────────────────────────────────────────────
+def calc_atr_swing(high, low, close, atr_period=14, atr_mult=1.5, swing_window=5):
+    """
+    ATR bazlı dinamik Swing Tepe ve Dip noktaları bulur.
+
+    Mantık:
+    - ATR ile o anki volatilite ölçülür
+    - Bir nokta swing tepe sayılır: etrafındaki en yüksek nokta VE
+      sağındaki/solundaki mumdan ATR'nin atr_mult katı kadar yüksek
+    - Dip için tersi geçerli
+
+    Döndürür:
+      swing_highs: [(index, fiyat, tarih, atr_degeri), ...]
+      swing_lows:  [(index, fiyat, tarih, atr_degeri), ...]
+    """
+    n   = len(close)
+    atr = calc_atr(high, low, close, atr_period)
+
+    swing_highs = []
+    swing_lows  = []
+
+    for i in range(swing_window, n - swing_window):
+        atr_val  = float(atr.iloc[i])
+        high_val = float(high.iloc[i])
+        low_val  = float(low.iloc[i])
+
+        # Sol ve sağ penceredeki max/min değerler
+        left_high  = high.iloc[i-swing_window:i].max()
+        right_high = high.iloc[i+1:i+swing_window+1].max()
+        left_low   = low.iloc[i-swing_window:i].min()
+        right_low  = low.iloc[i+1:i+swing_window+1].min()
+
+        # ATR filtresi: sadece yeterince belirgin noktaları al
+        threshold = atr_val * atr_mult
+
+        # Swing Tepe: sol ve sağdan ATR * mult kadar yüksek
+        if (high_val >= left_high and
+            high_val >= right_high and
+            high_val - left_high  >= threshold * 0.3 or
+            high_val - right_high >= threshold * 0.3):
+            if high_val == high.iloc[i-swing_window:i+swing_window+1].max():
+                swing_highs.append({
+                    "idx":   i,
+                    "fiyat": round(high_val, 4),
+                    "tarih": close.index[i],
+                    "atr":   round(atr_val, 4),
+                })
+
+        # Swing Dip: sol ve sağdan ATR * mult kadar düşük
+        if (low_val <= left_low and
+            low_val <= right_low and
+            left_low  - low_val >= threshold * 0.3 or
+            right_low - low_val >= threshold * 0.3):
+            if low_val == low.iloc[i-swing_window:i+swing_window+1].min():
+                swing_lows.append({
+                    "idx":   i,
+                    "fiyat": round(low_val, 4),
+                    "tarih": close.index[i],
+                    "atr":   round(atr_val, 4),
+                })
+
+    # Son N swing noktasını döndür (grafik kalabalık olmasın)
+    return swing_highs[-20:], swing_lows[-20:]
+
+
+def add_swing_to_fig(fig, df, swing_highs, swing_lows, row=1):
+    """Swing noktalarını Plotly grafiğine ekle."""
+
+    # Swing Tepeler — kırmızı üçgen aşağı
+    if swing_highs:
+        sh_x = [df.index[s["idx"]] for s in swing_highs]
+        sh_y = [s["fiyat"] * 1.002  for s in swing_highs]
+        sh_t = [f"🔴 Swing Tepe<br>₺{s['fiyat']:.2f}<br>ATR: {s['atr']:.2f}"
+                for s in swing_highs]
+        fig.add_trace(go.Scatter(
+            x=sh_x, y=sh_y,
+            mode="markers+text",
+            name="Swing Tepe",
+            text=["T" for _ in swing_highs],
+            textposition="top center",
+            textfont=dict(color="#FF5252", size=9, family="Arial Black"),
+            marker=dict(
+                symbol="triangle-down",
+                size=12,
+                color="#FF5252",
+                line=dict(color="#B71C1C", width=1),
+            ),
+            hovertext=sh_t,
+            hoverinfo="text",
+            showlegend=True,
+        ), row=row, col=1)
+
+    # Swing Dipler — yeşil üçgen yukarı
+    if swing_lows:
+        sl_x = [df.index[s["idx"]] for s in swing_lows]
+        sl_y = [s["fiyat"] * 0.998  for s in swing_lows]
+        sl_t = [f"🟢 Swing Dip<br>₺{s['fiyat']:.2f}<br>ATR: {s['atr']:.2f}"
+                for s in swing_lows]
+        fig.add_trace(go.Scatter(
+            x=sl_x, y=sl_y,
+            mode="markers+text",
+            name="Swing Dip",
+            text=["D" for _ in swing_lows],
+            textposition="bottom center",
+            textfont=dict(color="#69F0AE", size=9, family="Arial Black"),
+            marker=dict(
+                symbol="triangle-up",
+                size=12,
+                color="#69F0AE",
+                line=dict(color="#00C853", width=1),
+            ),
+            hovertext=sl_t,
+            hoverinfo="text",
+            showlegend=True,
+        ), row=row, col=1)
+
+    # Swing noktalarını birbirine çizgi ile bağla (zigzag)
+    all_swings = (
+        [{"idx": s["idx"], "fiyat": s["fiyat"], "tip": "tepe"} for s in swing_highs] +
+        [{"idx": s["idx"], "fiyat": s["fiyat"], "tip": "dip"}  for s in swing_lows]
+    )
+    all_swings.sort(key=lambda x: x["idx"])
+
+    if len(all_swings) >= 2:
+        zx = [df.index[s["idx"]] for s in all_swings]
+        zy = [s["fiyat"]          for s in all_swings]
+        fig.add_trace(go.Scatter(
+            x=zx, y=zy,
+            mode="lines",
+            name="Swing ZigZag",
+            line=dict(color="rgba(255,235,59,0.4)", width=1.2, dash="dot"),
+            showlegend=True,
+            hoverinfo="skip",
+        ), row=row, col=1)
+
+    return fig
+
+
     macd_l, macd_s, _ = calc_macd(close)
     rsi  = calc_rsi(close, rsi_period)
     stk_k, stk_d = calc_stoch(high, low, close)
@@ -812,7 +949,9 @@ def fetch_commodity(ticker, days, interval):
 # ─────────────────────────────────────────────
 # GRAFİK OLUŞTURUCU (tek zaman dilimi)
 # ─────────────────────────────────────────────
-def build_figure(df, name, label, rsi_period, mom_period, show_signals, show_sr, para="₺"):
+def build_figure(df, name, label, rsi_period, mom_period,
+                 show_signals, show_sr, para="₺",
+                 show_swing=False, swing_mult=1.5, swing_win=5):
     close, high, low, op = df["Close"], df["High"], df["Low"], df["Open"]
     vol = df["Volume"] if "Volume" in df.columns else None
 
@@ -861,6 +1000,16 @@ def build_figure(df, name, label, rsi_period, mom_period, show_signals, show_sr,
             line=dict(color=tl["color"], width=2, dash="solid"),
             opacity=0.85,
         ), row=1, col=1)
+
+    # ── ATR SWING TEPE / DİP ──
+    if show_swing:
+        s_highs, s_lows = calc_atr_swing(
+            high, low, close,
+            atr_period=14,
+            atr_mult=swing_mult,
+            swing_window=swing_win,
+        )
+        fig = add_swing_to_fig(fig, df, s_highs, s_lows, row=1)
 
     if show_sr:
         for lv in sup_levels:
@@ -1135,10 +1284,16 @@ with st.sidebar:
     mom_period = st.number_input("Momentum Periyot", 2, 50, 10, key="ni_mom")
 
     st.markdown("**Göster / Gizle**")
-    show_signals = st.toggle("🔔 Alım/Satım Sinyalleri", value=True, key="tog_sig")
-    show_sr      = st.toggle("📐 Destek / Direnç",       value=True, key="tog_sr")
-    show_div     = st.toggle("🔀 Divergence Tespiti",     value=True, key="tog_div")
-    show_mtf     = st.toggle("🕐 Çoklu Zaman Dilimi",    value=True, key="tog_mtf")
+    show_signals = st.toggle("🔔 Alım/Satım Sinyalleri", value=True,  key="tog_sig")
+    show_sr      = st.toggle("📐 Destek / Direnç",       value=True,  key="tog_sr")
+    show_div     = st.toggle("🔀 Divergence Tespiti",     value=True,  key="tog_div")
+    show_mtf     = st.toggle("🕐 Çoklu Zaman Dilimi",    value=True,  key="tog_mtf")
+    show_swing   = st.toggle("🔺 ATR Swing Tepe/Dip",    value=True,  key="tog_swg")
+
+    if show_swing:
+        st.markdown("**Swing Ayarları**")
+        swing_atr_mult = st.slider("ATR Çarpanı",    0.5, 4.0, 1.5, 0.1, key="swg_mult")
+        swing_window   = st.slider("Swing Penceresi", 2,   15,  5,   1,   key="swg_win")
 
     st.markdown("---")
     if is_scanner:
@@ -1177,6 +1332,9 @@ if analiz_btn:
         "last_rsi": rsi_period, "last_mom": mom_period,
         "last_signals": show_signals, "last_sr": show_sr,
         "last_div": show_div, "last_mtf": show_mtf,
+        "last_swing": show_swing,
+        "last_swing_mult": swing_atr_mult if show_swing else 1.5,
+        "last_swing_win":  swing_window   if show_swing else 5,
         "last_is_comm": is_commodity, "last_comm_key": commodity_key,
         "last_is_idx":  is_index,     "last_idx_key":  index_key,
         "last_is_scan": is_scanner,
@@ -1277,6 +1435,9 @@ ss   = st.session_state.get("last_signals", show_signals)
 sr   = st.session_state.get("last_sr",      show_sr)
 sd   = st.session_state.get("last_div",     show_div)
 smtf = st.session_state.get("last_mtf",     show_mtf)
+swg  = st.session_state.get("last_swing",   show_swing)
+swg_mult = st.session_state.get("last_swing_mult", 1.5)
+swg_win  = st.session_state.get("last_swing_win",  5)
 is_c = st.session_state.get("last_is_comm", is_commodity)
 is_i = st.session_state.get("last_is_idx",  is_index)
 ck   = st.session_state.get("last_comm_key", commodity_key)
@@ -1456,10 +1617,12 @@ if tg_btn and tg_token and tg_chat_id:
 tabs = st.tabs(["📈 Günlük", "📊 Haftalık", "🕐 Çoklu Zaman Dilimi"])
 
 with tabs[0]:
-    st.plotly_chart(build_figure(df_d, disp_name, "GÜNLÜK",   rp, mp, ss, sr, para), use_container_width=True)
+    st.plotly_chart(build_figure(df_d, disp_name, "GÜNLÜK",
+        rp, mp, ss, sr, para, swg, swg_mult, swg_win), use_container_width=True)
 
 with tabs[1]:
-    st.plotly_chart(build_figure(df_w, disp_name, "HAFTALIK", rp, mp, ss, sr, para), use_container_width=True)
+    st.plotly_chart(build_figure(df_w, disp_name, "HAFTALIK",
+        rp, mp, ss, sr, para, swg, swg_mult, swg_win), use_container_width=True)
 
 with tabs[2]:
     if smtf:
